@@ -1022,6 +1022,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Alternative health check endpoint
+app.get('/healthz', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Start server
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';

@@ -1,0 +1,18 @@
+{
+  "name": "bangfall-server",
+  "version": "1.0.0",
+  "description": "Multiplayer server for Bangfall game",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  },
+  "keywords": ["multiplayer", "game", "server", "socket.io"],
+  "author": "",
+  "license": "ISC"
+} 

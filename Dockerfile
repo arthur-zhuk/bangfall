@@ -2,11 +2,13 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy server's package.json instead of root package.json
+COPY server/package*.json ./
 RUN npm ci --only=production
 
-COPY server/ ./server/
+# Copy server files
+COPY server/index.js ./index.js
 
 EXPOSE 3001
 
-CMD ["node", "server/index.js"] 
+CMD ["node", "index.js"] 
