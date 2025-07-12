@@ -1,9 +1,20 @@
 import Phaser from 'phaser';
 import { EventBus } from '../EventBus';
+import { MultiplayerManager, type MultiplayerPlayer } from '../../multiplayer/MultiplayerManager';
 
 export class LumbridgeScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private goblins!: Phaser.Physics.Arcade.Group;
+  
+  // Multiplayer players
+  private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
+  private multiplayerManager: MultiplayerManager | null = null;
+  
+  // Minimap for debugging
+  private minimap!: Phaser.GameObjects.Container;
+  private minimapBackground!: Phaser.GameObjects.Rectangle;
+  private minimapPlayerDot!: Phaser.GameObjects.Graphics;
+  private minimapOtherPlayerDots: Map<string, Phaser.GameObjects.Graphics> = new Map();
   
   // Activity areas - now using sprites instead of rectangles
   private miningArea!: Phaser.GameObjects.Sprite;
@@ -27,12 +38,35 @@ export class LumbridgeScene extends Phaser.Scene {
   private playerTurn = true;
   private combatUI!: Phaser.GameObjects.Container;
   
+  // HP Bars for combat
+  private playerHPBar!: Phaser.GameObjects.Container;
+  private enemyHPBar!: Phaser.GameObjects.Container;
+  private playerHPBarBackground!: Phaser.GameObjects.Rectangle;
+  private playerHPBarForeground!: Phaser.GameObjects.Rectangle;
+  private enemyHPBarBackground!: Phaser.GameObjects.Rectangle;
+  private enemyHPBarForeground!: Phaser.GameObjects.Rectangle;
+  
+  // PvP Combat system
+  private isInPvPCombat = false;
+  private pvpOpponent: Phaser.Physics.Arcade.Sprite | null = null;
+  private pvpPlayerHPBar!: Phaser.GameObjects.Container;
+  private pvpOpponentHPBar!: Phaser.GameObjects.Container;
+  private pvpPlayerHPBarBackground!: Phaser.GameObjects.Rectangle;
+  private pvpPlayerHPBarForeground!: Phaser.GameObjects.Rectangle;
+  private pvpOpponentHPBarBackground!: Phaser.GameObjects.Rectangle;
+  private pvpOpponentHPBarForeground!: Phaser.GameObjects.Rectangle;
+  
   // Activity status
   private statusText!: Phaser.GameObjects.Text;
   private activityInProgress = false;
   
   // Player direction for proper sprite orientation
   private playerDirection = 'down';
+  
+  // Weapon system
+  private equippedWeapon = 'bronze_sword';
+  private weaponUI!: Phaser.GameObjects.Container;
+  private equippedWeaponText!: Phaser.GameObjects.Text;
   
   // Click-to-move system
   private targetPosition: { x: number; y: number } | null = null;
@@ -74,7 +108,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const canvas = document.createElement('canvas');
     canvas.width = 48;  // Increased size for more detail
     canvas.height = 48;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      console.error('Failed to get 2D context for player sprite canvas');
+      return;
+    }
     
     // Clear canvas
     ctx.clearRect(0, 0, 48, 48);
@@ -514,8 +553,182 @@ export class LumbridgeScene extends Phaser.Scene {
         break;
     }
     
+    // Draw weapon on the player sprite
+    this.drawWeapon(ctx, this.equippedWeapon, direction);
+    
     // Add the canvas as a texture with direction suffix
     this.textures.addCanvas(`player_sprite_${direction}`, canvas);
+  }
+  
+  private drawWeapon(ctx: CanvasRenderingContext2D, weaponType: string, direction: string) {
+    if (weaponType === 'bronze_sword') {
+      // Draw sword - make it more prominent and shiny
+      ctx.fillStyle = '#8B4513'; // Brown handle
+      ctx.strokeStyle = '#E6E6FA'; // Bright silver blade
+      ctx.lineWidth = 3;
+      
+      switch (direction) {
+        case 'down':
+          // Sword held at side - make it bigger and more visible
+          ctx.fillRect(37, 24, 4, 10); // Larger handle
+          ctx.strokeStyle = '#E6E6FA';
+          ctx.beginPath();
+          ctx.moveTo(39, 24);
+          ctx.lineTo(39, 12); // Longer blade
+          ctx.stroke();
+          // Add blade center shine
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(39, 22);
+          ctx.lineTo(39, 14);
+          ctx.stroke();
+          break;
+        case 'up':
+          // Sword on back - more visible
+          ctx.fillRect(27, 16, 4, 10); // Larger handle
+          ctx.strokeStyle = '#E6E6FA';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(29, 16);
+          ctx.lineTo(29, 6); // Longer blade
+          ctx.stroke();
+          // Add blade shine
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(29, 14);
+          ctx.lineTo(29, 8);
+          ctx.stroke();
+          break;
+        case 'left':
+          // Sword at left side - more prominent
+          ctx.fillRect(8, 27, 10, 4); // Larger handle
+          ctx.strokeStyle = '#E6E6FA';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(8, 29);
+          ctx.lineTo(-2, 29); // Longer blade
+          ctx.stroke();
+          // Add blade shine
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(6, 29);
+          ctx.lineTo(1, 29);
+          ctx.stroke();
+          break;
+        case 'right':
+          // Sword at right side - more prominent
+          ctx.fillRect(30, 27, 10, 4); // Larger handle
+          ctx.strokeStyle = '#E6E6FA';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(40, 29);
+          ctx.lineTo(50, 29); // Longer blade
+          ctx.stroke();
+          // Add blade shine
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(42, 29);
+          ctx.lineTo(47, 29);
+          ctx.stroke();
+          break;
+      }
+    } else if (weaponType === 'bow') {
+      // Draw bow and quiver - make it more prominent
+      ctx.strokeStyle = '#8B4513'; // Brown bow
+      ctx.lineWidth = 3;
+      
+      switch (direction) {
+        case 'down':
+          // Bow held in hand - make it bigger and more visible
+          ctx.beginPath();
+          ctx.arc(4, 25, 10, 0.2, 2.9); // Larger bow
+          ctx.stroke();
+          // Bow string
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(-2, 18);
+          ctx.lineTo(-2, 32);
+          ctx.stroke();
+          
+          // Arrow quiver on back - more prominent
+          ctx.fillStyle = '#654321';
+          ctx.fillRect(31, 18, 5, 16); // Larger quiver
+          // Arrow fletching - more visible
+          ctx.fillStyle = '#228B22';
+          ctx.fillRect(32, 18, 3, 4);
+          ctx.fillStyle = '#FF6347';
+          ctx.fillRect(32, 22, 3, 4);
+          // Arrow tips
+          ctx.fillStyle = '#C0C0C0';
+          ctx.fillRect(32, 32, 3, 2);
+          break;
+        case 'up':
+          // Bow on back with quiver - more visible
+          ctx.beginPath();
+          ctx.arc(27, 14, 10, 0.2, 2.9); // Larger bow
+          ctx.stroke();
+          // Bow string
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(21, 7);
+          ctx.lineTo(21, 21);
+          ctx.stroke();
+          
+          // Arrow quiver - more prominent
+          ctx.fillStyle = '#654321';
+          ctx.fillRect(31, 18, 5, 16); // Larger quiver
+          // Arrow fletching
+          ctx.fillStyle = '#228B22';
+          ctx.fillRect(32, 18, 3, 4);
+          ctx.fillStyle = '#FF6347';
+          ctx.fillRect(32, 22, 3, 4);
+          break;
+        case 'left':
+          // Bow held horizontally - more prominent
+          ctx.beginPath();
+          ctx.arc(8, 25, 10, -0.7, 0.7); // Larger bow
+          ctx.stroke();
+          // Bow string
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(1, 18);
+          ctx.lineTo(1, 32);
+          ctx.stroke();
+          
+          // Arrow quiver on back
+          ctx.fillStyle = '#654321';
+          ctx.fillRect(31, 18, 5, 16);
+          ctx.fillStyle = '#228B22';
+          ctx.fillRect(32, 18, 3, 4);
+          break;
+        case 'right':
+          // Bow held horizontally - more prominent
+          ctx.beginPath();
+          ctx.arc(40, 25, 10, 2.4, 3.8); // Larger bow
+          ctx.stroke();
+          // Bow string
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(47, 18);
+          ctx.lineTo(47, 32);
+          ctx.stroke();
+          
+          // Arrow quiver on back
+          ctx.fillStyle = '#654321';
+          ctx.fillRect(31, 18, 5, 16);
+          ctx.fillStyle = '#228B22';
+          ctx.fillRect(32, 18, 3, 4);
+          break;
+      }
+    }
   }
 
   private createGoblinSprites() {
@@ -534,7 +747,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const canvas = document.createElement('canvas');
     canvas.width = 40;  // Smaller than player but still detailed
     canvas.height = 40;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      console.error('Failed to get 2D context for goblin sprite canvas');
+      return;
+    }
     
     // Clear canvas
     ctx.clearRect(0, 0, 40, 40);
@@ -828,7 +1046,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const grassCanvas = document.createElement('canvas');
     grassCanvas.width = 64;
     grassCanvas.height = 64;
-    const grassCtx = grassCanvas.getContext('2d')!;
+    const grassCtx = grassCanvas.getContext('2d');
+    
+    if (!grassCtx) {
+      console.error('Failed to get 2D context for grass canvas');
+      return;
+    }
     
     // Base grass color
     grassCtx.fillStyle = '#228B22';
@@ -856,7 +1079,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const treeCanvas = document.createElement('canvas');
     treeCanvas.width = 64;
     treeCanvas.height = 64;
-    const treeCtx = treeCanvas.getContext('2d')!;
+    const treeCtx = treeCanvas.getContext('2d');
+    
+    if (!treeCtx) {
+      console.error('Failed to get 2D context for tree canvas');
+      return;
+    }
     
     // Tree trunk with bark texture
     treeCtx.fillStyle = '#8B4513';
@@ -907,7 +1135,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const rockCanvas = document.createElement('canvas');
     rockCanvas.width = 64;
     rockCanvas.height = 64;
-    const rockCtx = rockCanvas.getContext('2d')!;
+    const rockCtx = rockCanvas.getContext('2d');
+    
+    if (!rockCtx) {
+      console.error('Failed to get 2D context for rock canvas');
+      return;
+    }
     
     // Base rock shape (irregular)
     rockCtx.fillStyle = '#696969';
@@ -959,7 +1192,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const waterCanvas = document.createElement('canvas');
     waterCanvas.width = 64;
     waterCanvas.height = 64;
-    const waterCtx = waterCanvas.getContext('2d')!;
+    const waterCtx = waterCanvas.getContext('2d');
+    
+    if (!waterCtx) {
+      console.error('Failed to get 2D context for water canvas');
+      return;
+    }
     
     // Base water color
     waterCtx.fillStyle = '#4169E1';
@@ -998,7 +1236,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const miningCanvas = document.createElement('canvas');
     miningCanvas.width = 64;
     miningCanvas.height = 64;
-    const miningCtx = miningCanvas.getContext('2d')!;
+    const miningCtx = miningCanvas.getContext('2d');
+    
+    if (!miningCtx) {
+      console.error('Failed to get 2D context for mining area canvas');
+      return;
+    }
     
     // Base rocky ground
     miningCtx.fillStyle = '#8B7355';
@@ -1050,7 +1293,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const fishingCanvas = document.createElement('canvas');
     fishingCanvas.width = 64;
     fishingCanvas.height = 64;
-    const fishingCtx = fishingCanvas.getContext('2d')!;
+    const fishingCtx = fishingCanvas.getContext('2d');
+    
+    if (!fishingCtx) {
+      console.error('Failed to get 2D context for fishing area canvas');
+      return;
+    }
     
     // Water base
     fishingCtx.fillStyle = '#4169E1';
@@ -1136,7 +1384,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const cookingCanvas = document.createElement('canvas');
     cookingCanvas.width = 64;
     cookingCanvas.height = 64;
-    const cookingCtx = cookingCanvas.getContext('2d')!;
+    const cookingCtx = cookingCanvas.getContext('2d');
+    
+    if (!cookingCtx) {
+      console.error('Failed to get 2D context for cooking area canvas');
+      return;
+    }
     
     // Ground/stone base
     cookingCtx.fillStyle = '#8B7355';
@@ -1232,7 +1485,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const woodcuttingCanvas = document.createElement('canvas');
     woodcuttingCanvas.width = 64;
     woodcuttingCanvas.height = 64;
-    const woodcuttingCtx = woodcuttingCanvas.getContext('2d')!;
+    const woodcuttingCtx = woodcuttingCanvas.getContext('2d');
+    
+    if (!woodcuttingCtx) {
+      console.error('Failed to get 2D context for woodcutting area canvas');
+      return;
+    }
     
     // Ground
     woodcuttingCtx.fillStyle = '#8B7355';
@@ -1318,7 +1576,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const glowCanvas = document.createElement('canvas');
     glowCanvas.width = 64;
     glowCanvas.height = 64;
-    const glowCtx = glowCanvas.getContext('2d')!;
+    const glowCtx = glowCanvas.getContext('2d');
+    
+    if (!glowCtx) {
+      console.error('Failed to get 2D context for glow canvas');
+      return;
+    }
     
     // Outer glow
     glowCtx.strokeStyle = '#FFD700';
@@ -1356,7 +1619,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const targetCanvas = document.createElement('canvas');
     targetCanvas.width = 16;
     targetCanvas.height = 16;
-    const targetCtx = targetCanvas.getContext('2d')!;
+    const targetCtx = targetCanvas.getContext('2d');
+    
+    if (!targetCtx) {
+      console.error('Failed to get 2D context for target canvas');
+      return;
+    }
     
     // Outer ring
     targetCtx.strokeStyle = '#00FF00';
@@ -1393,7 +1661,12 @@ export class LumbridgeScene extends Phaser.Scene {
     const lootCanvas = document.createElement('canvas');
     lootCanvas.width = 32;
     lootCanvas.height = 32;
-    const lootCtx = lootCanvas.getContext('2d')!;
+    const lootCtx = lootCanvas.getContext('2d');
+    
+    if (!lootCtx) {
+      console.error('Failed to get 2D context for loot canvas');
+      return;
+    }
     
     // Chest base
     lootCtx.fillStyle = '#8B4513'; // Brown chest body
@@ -1583,13 +1856,396 @@ export class LumbridgeScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
     this.cameras.main.setZoom(1.5);
     
+    // Setup multiplayer
+    this.setupMultiplayer();
+    
+    // Create minimap
+    this.createMinimap();
+    
     // Emit scene ready event
     EventBus.emit('current-scene-ready', this);
   }
 
-  private handleInteraction(player: any, interactiveObject: any) {
+  private setupMultiplayer() {
+    // Get multiplayer manager from global context
+    const multiplayerManager = (window as unknown as { multiplayerManager?: MultiplayerManager }).multiplayerManager;
+    if (multiplayerManager) {
+      this.multiplayerManager = multiplayerManager;
+      console.log('🔗 Multiplayer manager found and connected to scene');
+      console.log('🔗 Connection status:', multiplayerManager.isConnected());
+      console.log('🔗 Other players count:', multiplayerManager.getOtherPlayers().length);
+      
+      // If already connected, get existing other players
+      if (multiplayerManager.isConnected()) {
+        const otherPlayers = multiplayerManager.getOtherPlayers();
+        console.log('🔗 Already connected - existing other players:', otherPlayers);
+        if (otherPlayers.length > 0) {
+          this.updateOtherPlayers(otherPlayers);
+        }
+      }
+      
+      // Listen for multiplayer events
+      multiplayerManager.on('other-players', (players: MultiplayerPlayer[]) => {
+        console.log('📡 Received other-players event:', players);
+        console.log('📡 Number of other players:', players.length);
+        this.updateOtherPlayers(players);
+      });
+      
+      multiplayerManager.on('player-joined', (player: MultiplayerPlayer) => {
+        console.log('📡 Received player-joined event:', player);
+        this.addOtherPlayer(player);
+      });
+      
+      multiplayerManager.on('player-left', (playerId: string) => {
+        console.log('📡 Received player-left event:', playerId);
+        this.removeOtherPlayer(playerId);
+      });
+      
+      multiplayerManager.on('player-moved', (data: { playerId: string; position: { x: number; y: number }; direction?: string }) => {
+        console.log('📡 Received player-moved event:', data);
+        this.updateOtherPlayerPosition(data.playerId, data.position, data.direction);
+      });
+
+      // PvP Combat event listeners
+      multiplayerManager.on('pvp-combat-started', (data: { opponent: { id: string; name: string }; yourStats: { health: number; maxHealth: number }; opponentStats: { health: number; maxHealth: number } }) => {
+        console.log('⚔️ PvP combat started with:', data.opponent.name);
+        this.startPvPCombat(data.opponent.id, data.yourStats, data.opponentStats);
+      });
+
+      multiplayerManager.on('pvp-combat-update', (data: { yourStats: { health: number; maxHealth: number }; opponentStats: { health: number; maxHealth: number }; actionResult: string; isRanged?: boolean }) => {
+        console.log('⚔️ PvP combat update:', data.actionResult);
+        this.updatePvPCombat(data);
+      });
+
+      multiplayerManager.on('pvp-combat-ended', (data: { winnerName: string }) => {
+        console.log('⚔️ PvP combat ended:', data.winnerName, 'wins');
+        this.endPvPCombat(data.winnerName);
+      });
+
+      // Player loot drop event listener  
+      multiplayerManager.on('player-loot-dropped', (data: { deadPlayerId: string; winnerPlayerId: string; deadPlayerName: string; winnerPlayerName: string; position: { x: number; y: number }; loot: Array<{ id: number; name: string; rarity: string; value: number; quantity: number }> }) => {
+        console.log('💰 Player loot dropped:', data.deadPlayerName, 'dropped loot for', data.winnerPlayerName);
+        
+        // If this is our player who died, use their actual inventory
+        if (data.deadPlayerId === this.multiplayerManager?.getPlayerData()?.id) {
+          const actualInventory = this.getPlayerInventory();
+          if (actualInventory.length > 0) {
+            this.createPlayerLootDrops(data.position.x, data.position.y, actualInventory, data.deadPlayerName);
+          } else {
+            // Fallback to server-provided loot
+            this.createPlayerLootDrops(data.position.x, data.position.y, data.loot, data.deadPlayerName);
+          }
+        } else {
+          // For other players, use server-provided loot
+          this.createPlayerLootDrops(data.position.x, data.position.y, data.loot, data.deadPlayerName);
+        }
+      });
+
+      // Player respawn event listener
+      multiplayerManager.on('player-respawned', (data: { deadPlayerId: string; winnerPlayerId: string; deadPlayerName: string; winnerPlayerName: string; newPosition: { x: number; y: number } }) => {
+        console.log('🔄 Player respawned:', data.deadPlayerName, 'respawned at center after losing to', data.winnerPlayerName);
+        
+        // Update the dead player's position in our local player list
+        const respawnedPlayer = this.otherPlayers.get(data.deadPlayerId);
+        if (respawnedPlayer) {
+          respawnedPlayer.x = data.newPosition.x;
+          respawnedPlayer.y = data.newPosition.y;
+        }
+        
+        // Reset player health if this player was the one who respawned
+        if (data.deadPlayerId === this.multiplayerManager?.getPlayerData()?.id) {
+          this.playerStats.health = this.playerStats.maxHealth;
+          console.log('🔄 Player health reset to full after respawn');
+        }
+        
+        // Show status message about the respawn
+        this.statusText.setText(`🔄 ${data.deadPlayerName} respawned at center!`);
+        this.time.delayedCall(3000, () => {
+          this.statusText.setText('');
+        });
+      });
+
+      // Weapon equipped listener
+      multiplayerManager.on('weapon-equipped', (data: { weapon: string }) => {
+        this.equippedWeapon = data.weapon;
+        this.updateWeaponUI();
+        
+        // Recreate player sprites with new weapon
+        this.createPlayerSprites();
+        this.updatePlayerSprite();
+        
+        this.statusText.setText(`Equipped ${data.weapon}!`);
+        this.time.delayedCall(2000, () => {
+          this.statusText.setText('');
+        });
+      });
+      
+      // Check for other players periodically (in case we missed the initial event)
+      const checkForOtherPlayers = () => {
+        if (multiplayerManager.isConnected()) {
+          const otherPlayers = multiplayerManager.getOtherPlayers();
+          console.log('🔄 Periodic check - other players:', otherPlayers.length);
+          if (otherPlayers.length > 0 && this.otherPlayers.size === 0) {
+            console.log('🔄 Found other players that weren\'t displayed, adding them now');
+            this.updateOtherPlayers(otherPlayers);
+          }
+        }
+      };
+      
+      // Check every 3 seconds
+      this.time.addEvent({
+        delay: 3000,
+        callback: checkForOtherPlayers,
+        loop: true
+      });
+      
+    } else {
+      console.log('❌ No multiplayer manager found on window object');
+    }
+  }
+
+  private createMinimap() {
+    // Create minimap container
+    this.minimap = this.add.container(50, 50);
+    this.minimap.setDepth(1000);
+    
+    // Create minimap background
+    this.minimapBackground = this.add.rectangle(0, 0, 200, 150, 0x000000, 0.8);
+    this.minimapBackground.setStrokeStyle(2, 0xffffff);
+    this.minimap.add(this.minimapBackground);
+    
+    // Add title
+    const minimapTitle = this.add.text(0, -65, 'Minimap', {
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    });
+    minimapTitle.setOrigin(0.5);
+    this.minimap.add(minimapTitle);
+    
+    // Create player dot (blue)
+    this.minimapPlayerDot = this.add.graphics();
+    this.minimapPlayerDot.fillStyle(0x0099ff);
+    this.minimapPlayerDot.fillCircle(0, 0, 4);
+    this.minimap.add(this.minimapPlayerDot);
+    
+    // Add legend and debug info
+    const legendText = this.add.text(0, 60, 'Blue: You\nGreen: Other Players', {
+      fontSize: '10px',
+      color: '#cccccc',
+      align: 'center'
+    });
+    legendText.setOrigin(0.5);
+    this.minimap.add(legendText);
+    
+    // Add debug info text
+    const debugText = this.add.text(0, 80, 'Debug Info', {
+      fontSize: '8px',
+      color: '#ffff00',
+      align: 'center'
+    });
+    debugText.setOrigin(0.5);
+    this.minimap.add(debugText);
+    
+    // Store debug text for updates
+    this.minimap.setData('debugText', debugText);
+    
+    // Make minimap fixed to camera
+    this.minimap.setScrollFactor(0);
+    
+    console.log('🗺️ Minimap created');
+  }
+
+  private updateMinimapPlayerPosition() {
+    if (this.minimapPlayerDot && this.player) {
+      // Convert world position to minimap position
+      const worldWidth = 1600;
+      const worldHeight = 1200;
+      const minimapWidth = 180;
+      const minimapHeight = 130;
+      
+      const minimapX = ((this.player.x / worldWidth) * minimapWidth) - (minimapWidth / 2);
+      const minimapY = ((this.player.y / worldHeight) * minimapHeight) - (minimapHeight / 2);
+      
+      this.minimapPlayerDot.setPosition(minimapX, minimapY);
+    }
+  }
+
+  private updateMinimapOtherPlayers() {
+    if (!this.multiplayerManager || !this.multiplayerManager.isConnected()) {
+      console.log('🗺️ Cannot update minimap - no multiplayer manager or not connected');
+      return;
+    }
+    
+    const otherPlayers = this.multiplayerManager.getOtherPlayers();
+    console.log('🗺️ Updating minimap with other players:', otherPlayers.length);
+    
+    // Remove old dots
+    this.minimapOtherPlayerDots.forEach(dot => dot.destroy());
+    this.minimapOtherPlayerDots.clear();
+    
+    // Add new dots
+    otherPlayers.forEach(player => {
+      console.log('🗺️ Adding player to minimap:', player.username, 'at', player.position);
+      
+      const dot = this.add.graphics();
+      dot.fillStyle(0x00ff00); // Green for other players
+      dot.fillCircle(0, 0, 4); // Bigger dot for better visibility
+      
+      // Convert world position to minimap position
+      const worldWidth = 1600;
+      const worldHeight = 1200;
+      const minimapWidth = 180;
+      const minimapHeight = 130;
+      
+      const minimapX = ((player.position.x / worldWidth) * minimapWidth) - (minimapWidth / 2);
+      const minimapY = ((player.position.y / worldHeight) * minimapHeight) - (minimapHeight / 2);
+      
+      console.log('🗺️ Minimap position:', minimapX, minimapY);
+      
+      dot.setPosition(minimapX, minimapY);
+      dot.setDepth(1001); // Above minimap background
+      this.minimap.add(dot);
+      this.minimapOtherPlayerDots.set(player.id, dot);
+    });
+    
+    console.log('🗺️ Minimap updated with', this.minimapOtherPlayerDots.size, 'other player dots');
+  }
+
+  private updateOtherPlayers(players: MultiplayerPlayer[]) {
+    // Remove existing other players
+    this.otherPlayers.forEach((sprite) => {
+      sprite.destroy();
+    });
+    this.otherPlayers.clear();
+    
+    // Add all other players
+    players.forEach(player => {
+      this.addOtherPlayer(player);
+    });
+    
+    // Update minimap
+    this.updateMinimapOtherPlayers();
+  }
+
+  private addOtherPlayer(player: MultiplayerPlayer) {
+    if (this.otherPlayers.has(player.id)) {
+      console.log('🎮 Player already exists in scene:', player.username);
+      return;
+    }
+    
+    // Add null checks to prevent errors
+    if (!this.physics || !this.physics.add) {
+      console.error('🎮 Physics system not ready, retrying in 100ms for player:', player.username);
+      // Retry after a short delay
+      this.time.delayedCall(100, () => {
+        this.addOtherPlayer(player);
+      });
+      return;
+    }
+    
+    if (!player || !player.position) {
+      console.error('🎮 Invalid player data:', player);
+      return;
+    }
+    
+    console.log('🎮 Adding other player to scene:', player.username, 'at position:', player.position);
+    console.log('🎮 Current other players count before adding:', this.otherPlayers.size);
+    
+    try {
+      // Create sprite for other player
+      const otherPlayerSprite = this.physics.add.sprite(player.position.x, player.position.y, 'player_sprite_down');
+    otherPlayerSprite.setCollideWorldBounds(true);
+    otherPlayerSprite.setSize(32, 32);
+    otherPlayerSprite.setOffset(8, 8);
+    otherPlayerSprite.setTint(0x00FF00); // Bright green tint to distinguish from main player
+    otherPlayerSprite.setDepth(100); // Ensure it's rendered above other objects
+    
+    // Add username label with weapon indicator
+    const playerWeapon = 'equippedWeapon' in player ? (player as { equippedWeapon: string }).equippedWeapon : 'bronze_sword';
+    const weaponIcon = playerWeapon === 'bow' ? '🏹' : '⚔️';
+    const usernameText = this.add.text(player.position.x, player.position.y - 40, `${weaponIcon} ${player.username}`, {
+      fontSize: '14px',
+      color: '#00FF00',
+      backgroundColor: '#000000',
+      padding: { x: 6, y: 4 },
+      fontStyle: 'bold'
+    });
+    usernameText.setOrigin(0.5);
+    usernameText.setDepth(101); // Ensure username is above everything
+    
+    // Store username text as data
+    otherPlayerSprite.setData('usernameText', usernameText);
+    
+    this.otherPlayers.set(player.id, otherPlayerSprite);
+    
+    console.log('🎮 Other player added successfully. Total other players:', this.otherPlayers.size);
+    console.log('🎮 Other player sprite created at:', otherPlayerSprite.x, otherPlayerSprite.y);
+    console.log('🎮 Other player sprite visible:', otherPlayerSprite.visible);
+    console.log('🎮 Other player sprite active:', otherPlayerSprite.active);
+    
+    // Update minimap
+    this.updateMinimapOtherPlayers();
+    
+    } catch (error) {
+      console.error('🎮 Error adding other player:', error);
+      console.error('🎮 Player data:', player);
+      console.error('🎮 Physics system state:', !!this.physics, !!this.physics?.add);
+    }
+  }
+
+  private removeOtherPlayer(playerId: string) {
+    const sprite = this.otherPlayers.get(playerId);
+    if (sprite) {
+      console.log('🎮 Removing other player from scene:', playerId);
+      
+      // Remove username text
+      const usernameText = sprite.getData('usernameText') as Phaser.GameObjects.Text;
+      if (usernameText) {
+        usernameText.destroy();
+      }
+      
+      sprite.destroy();
+      this.otherPlayers.delete(playerId);
+      
+      // Update minimap
+      this.updateMinimapOtherPlayers();
+    }
+  }
+
+  private updateOtherPlayerPosition(playerId: string, position: { x: number; y: number }, direction?: string) {
+    const sprite = this.otherPlayers.get(playerId);
+    if (sprite) {
+      // Smooth movement
+      this.tweens.add({
+        targets: sprite,
+        x: position.x,
+        y: position.y,
+        duration: 200,
+        ease: 'Power2'
+      });
+      
+      // Update username text position
+      const usernameText = sprite.getData('usernameText') as Phaser.GameObjects.Text;
+      if (usernameText) {
+        this.tweens.add({
+          targets: usernameText,
+          x: position.x,
+          y: position.y - 40,
+          duration: 200,
+          ease: 'Power2'
+        });
+      }
+      
+      // Update sprite direction if provided
+      if (direction) {
+        sprite.setTexture(`player_sprite_${direction}`);
+      }
+    }
+  }
+
+  private handleInteraction(player: unknown, interactiveObject: unknown) {
     const sprite = interactiveObject as Phaser.Physics.Arcade.Sprite;
-    const activity = sprite.getData('activity');
     const name = sprite.getData('name');
     
     if (!this.activityInProgress && !this.isInCombat) {
@@ -1726,6 +2382,12 @@ export class LumbridgeScene extends Phaser.Scene {
       y: targetY,
       duration: duration,
       ease: 'Linear',
+      onUpdate: () => {
+        // Update multiplayer position during movement
+        if (this.multiplayerManager && this.multiplayerManager.isConnected()) {
+          this.multiplayerManager.updatePosition(this.player.x, this.player.y, this.playerDirection);
+        }
+      },
       onComplete: () => {
         // Reset to default direction when movement stops
         this.playerDirection = 'down';
@@ -1733,6 +2395,11 @@ export class LumbridgeScene extends Phaser.Scene {
         
         this.targetPosition = null;
         this.moveTween = null;
+        
+        // Final position update for multiplayer
+        if (this.multiplayerManager && this.multiplayerManager.isConnected()) {
+          this.multiplayerManager.updatePosition(targetX, targetY, this.playerDirection);
+        }
         
         // Remove target indicator
         if (this.moveTargetIndicator) {
@@ -1748,7 +2415,7 @@ export class LumbridgeScene extends Phaser.Scene {
   }
 
   private updatePlayerSprite() {
-    // Update the player sprite texture based on current direction
+    // Update the player sprite texture based on current direction and weapon
     const spriteKey = `player_sprite_${this.playerDirection}`;
     this.player.setTexture(spriteKey);
   }
@@ -1792,6 +2459,161 @@ export class LumbridgeScene extends Phaser.Scene {
     // Create empty combat UI container for compatibility
     this.combatUI = this.add.container(400, 300);
     this.combatUI.setVisible(false);
+
+    // Create weapon switching UI
+    this.createWeaponUI();
+  }
+
+  private createWeaponUI() {
+    // Create weapon UI container
+    this.weaponUI = this.add.container(0, 0);
+    this.weaponUI.setScrollFactor(0);
+    this.weaponUI.setDepth(1000);
+
+    // Background panel
+    const panelBg = this.add.rectangle(0, 0, 200, 80, 0x000000, 0.8);
+    panelBg.setStrokeStyle(2, 0x444444);
+    this.weaponUI.add(panelBg);
+
+    // Title
+    const titleText = this.add.text(0, -25, 'Weapons', {
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    });
+    titleText.setOrigin(0.5);
+    this.weaponUI.add(titleText);
+
+    // Currently equipped weapon
+    this.equippedWeaponText = this.add.text(0, -5, `Equipped: ${this.equippedWeapon}`, {
+      fontSize: '12px',
+      color: '#00ff00'
+    });
+    this.equippedWeaponText.setOrigin(0.5);
+    this.weaponUI.add(this.equippedWeaponText);
+
+    // Sword button
+    const swordButton = this.add.rectangle(-50, 15, 80, 25, 0x4a4a4a, 1);
+    swordButton.setStrokeStyle(1, 0x888888);
+    swordButton.setInteractive({ useHandCursor: true });
+    const swordText = this.add.text(-50, 15, '⚔️ Sword (1)', {
+      fontSize: '10px',
+      color: '#ffffff'
+    });
+    swordText.setOrigin(0.5);
+    
+    swordButton.on('pointerdown', () => this.switchWeapon('bronze_sword'));
+    swordButton.on('pointerover', () => {
+      if (this.equippedWeapon !== 'bronze_sword') {
+        swordButton.setFillStyle(0x666666);
+      }
+    });
+    swordButton.on('pointerout', () => {
+      if (this.equippedWeapon !== 'bronze_sword') {
+        swordButton.setFillStyle(0x4a4a4a);
+      }
+    });
+    
+    // Store button references for updating
+    swordButton.setData('weaponType', 'bronze_sword');
+    this.weaponUI.add([swordButton, swordText]);
+
+    // Bow button  
+    const bowButton = this.add.rectangle(50, 15, 80, 25, 0x4a4a4a, 1);
+    bowButton.setStrokeStyle(1, 0x888888);
+    bowButton.setInteractive({ useHandCursor: true });
+    const bowText = this.add.text(50, 15, '🏹 Bow (2)', {
+      fontSize: '10px',
+      color: '#ffffff'
+    });
+    bowText.setOrigin(0.5);
+    
+    bowButton.on('pointerdown', () => this.switchWeapon('bow'));
+    bowButton.on('pointerover', () => {
+      if (this.equippedWeapon !== 'bow') {
+        bowButton.setFillStyle(0x666666);
+      }
+    });
+    bowButton.on('pointerout', () => {
+      if (this.equippedWeapon !== 'bow') {
+        bowButton.setFillStyle(0x4a4a4a);
+      }
+    });
+    
+    // Store button references for updating
+    bowButton.setData('weaponType', 'bow');
+    this.weaponUI.add([bowButton, bowText]);
+    
+    // Store button references for later updates
+    this.weaponUI.setData('swordButton', swordButton);
+    this.weaponUI.setData('bowButton', bowButton);
+
+    // Position UI in bottom right corner with proper visibility
+    this.weaponUI.setPosition(700, 500);
+    this.weaponUI.setVisible(true);
+    
+    console.log('🎯 Weapon UI positioned at:', 700, 500);
+    
+    // Initialize weapon UI state
+    this.updateWeaponUI();
+  }
+
+  private updateWeaponUI() {
+    if (this.equippedWeaponText) {
+      this.equippedWeaponText.setText(`Equipped: ${this.equippedWeapon}`);
+    }
+    
+    // Update button highlighting
+    if (this.weaponUI) {
+      const swordButton = this.weaponUI.getData('swordButton') as Phaser.GameObjects.Rectangle;
+      const bowButton = this.weaponUI.getData('bowButton') as Phaser.GameObjects.Rectangle;
+      
+      if (swordButton && bowButton) {
+        // Reset both buttons to default state
+        swordButton.setFillStyle(0x4a4a4a);
+        bowButton.setFillStyle(0x4a4a4a);
+        
+        // Highlight the currently equipped weapon
+        if (this.equippedWeapon === 'bronze_sword') {
+          swordButton.setFillStyle(0x00aa00); // Green for equipped
+        } else if (this.equippedWeapon === 'bow') {
+          bowButton.setFillStyle(0x00aa00); // Green for equipped
+        }
+      }
+    }
+  }
+
+  private switchWeapon(weapon: string) {
+    if (this.equippedWeapon === weapon) {
+      this.statusText.setText(`${weapon} is already equipped!`);
+      this.time.delayedCall(1500, () => {
+        this.statusText.setText('');
+      });
+      return;
+    }
+    
+    console.log('🎯 Switching weapon from', this.equippedWeapon, 'to', weapon);
+    
+    // Update local state immediately for responsiveness
+    this.equippedWeapon = weapon;
+    this.updateWeaponUI();
+    
+    // Recreate player sprites with new weapon
+    this.createPlayerSprites();
+    
+    // Update the player sprite to show the new weapon
+    this.updatePlayerSprite();
+    
+    // Send to server
+    if (this.multiplayerManager && this.multiplayerManager.isConnected()) {
+      this.multiplayerManager.equipWeapon(weapon);
+    } else {
+      // Show status message even when not connected
+      this.statusText.setText(`Equipped ${weapon}!`);
+      this.time.delayedCall(2000, () => {
+        this.statusText.setText('');
+      });
+    }
   }
 
   private spawnGoblin(x: number, y: number) {
@@ -1878,7 +2700,7 @@ export class LumbridgeScene extends Phaser.Scene {
     goblin.setData('direction', direction);
   }
 
-  private startCombat(player: any, goblin: any) {
+  private startCombat(player: unknown, goblin: unknown) {
     if (this.isInCombat) return;
     
     const playerSprite = player as Phaser.Physics.Arcade.Sprite;
@@ -1899,6 +2721,9 @@ export class LumbridgeScene extends Phaser.Scene {
     goblinSprite.setVelocity(0);
     
     this.statusText.setText('Auto-battle started! Fighting goblin...');
+    
+    // Create HP bars for combat
+    this.createHPBars();
     
     // Start auto-battle timer
     this.startAutoBattle();
@@ -1947,6 +2772,9 @@ export class LumbridgeScene extends Phaser.Scene {
     this.showAttackAnimation(this.player, this.currentEnemy);
     this.showDamageIndicator(this.currentEnemy, damage, '#ff4444');
     
+    // Update HP bars
+    this.updateHPBars();
+    
     // Check if enemy is defeated
     if (newHealth <= 0) {
       this.time.delayedCall(800, () => {
@@ -1969,6 +2797,9 @@ export class LumbridgeScene extends Phaser.Scene {
     // Show attack animation and damage
     this.showAttackAnimation(this.currentEnemy, this.player);
     this.showDamageIndicator(this.player, damage, '#ff4444');
+    
+    // Update HP bars
+    this.updateHPBars();
     
     // Check if player is defeated
     if (this.playerStats.health <= 0) {
@@ -2086,6 +2917,9 @@ export class LumbridgeScene extends Phaser.Scene {
       this.combatTimer = null;
     }
     
+    // Hide HP bars
+    this.hideHPBars();
+    
     if (victory) {
       this.statusText.setText('Victory! You defeated the goblin!');
       
@@ -2187,7 +3021,48 @@ export class LumbridgeScene extends Phaser.Scene {
     }
   }
   
-  private pickupLoot(lootSprite: Phaser.GameObjects.Image, loot: any) {
+  private getPlayerInventory(): Array<{ id: number; name: string; rarity: string; value: number; quantity: number }> {
+    // Get player's actual inventory from localStorage (Smart Wallet inventory)
+    const playerData = this.multiplayerManager?.getPlayerData();
+    if (!playerData?.id) {
+      console.warn('No player data available for inventory retrieval');
+      return [];
+    }
+    
+    // Try to get the Smart Wallet address from localStorage or use a fallback
+    const smartWalletKeys = Object.keys(localStorage).filter(key => key.startsWith('nft-inventory-'));
+    const inventoryKey = smartWalletKeys.length > 0 ? smartWalletKeys[0] : null;
+    
+    if (!inventoryKey) {
+      console.warn('No Smart Wallet inventory found in localStorage');
+      return [];
+    }
+    
+    try {
+      const inventoryData = localStorage.getItem(inventoryKey);
+      if (!inventoryData) {
+        console.warn('No inventory data found in localStorage');
+        return [];
+      }
+      
+      const inventory = JSON.parse(inventoryData);
+      console.log('📦 Retrieved player inventory:', inventory);
+      
+      // Convert to the format expected by the game
+      return inventory.map((item: { id: number; name: string; rarity: string; value?: number; quantity: number }) => ({
+        id: item.id,
+        name: item.name,
+        rarity: item.rarity,
+        value: item.value || 10, // Default value if not specified
+        quantity: item.quantity
+      }));
+    } catch (error) {
+      console.error('Error retrieving player inventory:', error);
+      return [];
+    }
+  }
+  
+  private pickupLoot(lootSprite: Phaser.GameObjects.Image, loot: { id: number; name: string; rarity: string; value: number }) {
     // Remove the loot sprite
     lootSprite.destroy();
     
@@ -2243,23 +3118,25 @@ export class LumbridgeScene extends Phaser.Scene {
       let itemName: string;
       
       switch (activity) {
-        case 'mining':
+        case 'mining': {
           const miningRandom = Math.random();
           if (miningRandom < 0.4) { itemId = 1; itemName = 'Rock'; }
           else if (miningRandom < 0.7) { itemId = 3; itemName = 'Iron Ore'; }
           else if (miningRandom < 0.9) { itemId = 4; itemName = 'Gold Ore'; }
           else { itemId = 5; itemName = 'Diamond'; }
           break;
+        }
         case 'fishing':
           itemId = 7;
           itemName = 'Raw Fish';
           break;
-        case 'cooking':
+        case 'cooking': {
           const cookingRandom = Math.random();
           if (cookingRandom < 0.6) { itemId = 8; itemName = 'Cooked Fish'; }
           else if (cookingRandom < 0.9) { itemId = 9; itemName = 'Bread'; }
           else { itemId = 10; itemName = 'Cake'; }
           break;
+        }
         case 'woodcutting':
           itemId = 2;
           itemName = 'Wood';
@@ -2281,9 +3158,513 @@ export class LumbridgeScene extends Phaser.Scene {
     });
   }
 
+  // HP Bar Management Methods
+  private createHPBars() {
+    const barWidth = 60;
+    const barHeight = 8;
+
+    // Create player HP bar
+    this.playerHPBar = this.add.container(0, 0);
+    this.playerHPBarBackground = this.add.rectangle(0, 0, barWidth, barHeight, 0x000000, 0.8);
+    this.playerHPBarForeground = this.add.rectangle(0, 0, barWidth, barHeight, 0x00ff00);
+    this.playerHPBar.add([this.playerHPBarBackground, this.playerHPBarForeground]);
+    this.playerHPBar.setVisible(false);
+
+    // Create enemy HP bar
+    this.enemyHPBar = this.add.container(0, 0);
+    this.enemyHPBarBackground = this.add.rectangle(0, 0, barWidth, barHeight, 0x000000, 0.8);
+    this.enemyHPBarForeground = this.add.rectangle(0, 0, barWidth, barHeight, 0xff0000);
+    this.enemyHPBar.add([this.enemyHPBarBackground, this.enemyHPBarForeground]);
+    this.enemyHPBar.setVisible(false);
+
+    // Position HP bars above characters
+    this.updateHPBarPositions();
+    
+    // Show HP bars
+    this.playerHPBar.setVisible(true);
+    this.enemyHPBar.setVisible(true);
+    
+    // Update HP bar values
+    this.updateHPBars();
+  }
+
+  private updateHPBarPositions() {
+    if (!this.playerHPBar || !this.enemyHPBar) return;
+    
+    // Position player HP bar above player
+    this.playerHPBar.x = this.player.x;
+    this.playerHPBar.y = this.player.y - 50;
+    
+    // Position enemy HP bar above enemy
+    if (this.currentEnemy) {
+      this.enemyHPBar.x = this.currentEnemy.x;
+      this.enemyHPBar.y = this.currentEnemy.y - 50;
+    }
+  }
+
+  private updateHPBars() {
+    if (!this.playerHPBar || !this.enemyHPBar) return;
+    
+    // Update player HP bar
+    const playerHPPercent = this.playerStats.health / this.playerStats.maxHealth;
+    this.playerHPBarForeground.scaleX = playerHPPercent;
+    this.playerHPBarForeground.x = (playerHPPercent - 1) * 30; // Adjust position for left alignment
+    
+    // Update enemy HP bar
+    if (this.currentEnemy) {
+      const enemyCurrentHP = this.currentEnemy.getData('health');
+      const enemyMaxHP = this.currentEnemy.getData('maxHealth');
+      const enemyHPPercent = enemyCurrentHP / enemyMaxHP;
+      this.enemyHPBarForeground.scaleX = enemyHPPercent;
+      this.enemyHPBarForeground.x = (enemyHPPercent - 1) * 30; // Adjust position for left alignment
+    }
+    
+    // Update positions
+    this.updateHPBarPositions();
+  }
+
+  private hideHPBars() {
+    if (this.playerHPBar) {
+      this.playerHPBar.setVisible(false);
+    }
+    if (this.enemyHPBar) {
+      this.enemyHPBar.setVisible(false);
+    }
+  }
+
+  // PvP Combat Visual System
+  private startPvPCombat(opponentId: string, yourStats: { health: number; maxHealth: number }, opponentStats: { health: number; maxHealth: number }) {
+    // Find the opponent sprite
+    const opponentSprite = this.otherPlayers.get(opponentId);
+    if (!opponentSprite) {
+      console.error('⚔️ Cannot find opponent sprite for PvP combat:', opponentId);
+      return;
+    }
+
+    this.isInPvPCombat = true;
+    this.pvpOpponent = opponentSprite;
+    
+    // Stop any movement
+    if (this.moveTween) {
+      this.moveTween.stop();
+      this.moveTween = null;
+    }
+
+    // Create PvP HP bars
+    this.createPvPHPBars(yourStats, opponentStats);
+    
+    this.statusText.setText('⚔️ PvP Combat Started!');
+    console.log('⚔️ PvP combat visual system initialized');
+  }
+
+  private updatePvPCombat(data: { yourStats: { health: number; maxHealth: number }; opponentStats: { health: number; maxHealth: number }; actionResult: string; isRanged?: boolean }) {
+    if (!this.isInPvPCombat || !this.pvpOpponent) return;
+
+    // Add null checks for the data
+    if (!data || !data.yourStats || !data.opponentStats || !data.actionResult) {
+      console.warn('⚔️ Invalid combat data received:', data);
+      return;
+    }
+
+    // Update HP bars
+    this.updatePvPHPBars(data.yourStats, data.opponentStats);
+
+    // Show attack animation based on action result
+    if (data.actionResult.includes('attacks')) {
+      const damage = parseInt(data.actionResult.match(/(\d+) damage/)?.[1] || '0');
+      
+      // Determine attacker and target from action result
+      const isPlayerAttacker = data.actionResult.includes('You') || 
+        (this.multiplayerManager?.getPlayerData()?.username && 
+         data.actionResult.includes(this.multiplayerManager.getPlayerData()!.username));
+      
+      const attackerSprite = isPlayerAttacker ? this.player : this.pvpOpponent;
+      const targetSprite = isPlayerAttacker ? this.pvpOpponent : this.player;
+      
+      if (data.isRanged) {
+        this.showRangedAttack(attackerSprite, targetSprite, damage);
+      } else {
+        this.showMeleeAttack(attackerSprite, targetSprite, damage);
+      }
+    }
+
+    // Update status text
+    this.statusText.setText(`⚔️ ${data.actionResult}`);
+    
+    // Clear status after delay
+    this.time.delayedCall(2000, () => {
+      this.statusText.setText('⚔️ PvP Combat in Progress...');
+    });
+  }
+
+  private showMeleeAttack(attacker: Phaser.Physics.Arcade.Sprite, target: Phaser.Physics.Arcade.Sprite, damage: number) {
+    // Enhanced melee attack animation
+    const originalX = attacker.x;
+    const originalY = attacker.y;
+    const deltaX = target.x - attacker.x;
+    const deltaY = target.y - attacker.y;
+    const direction = this.calculateDirection(deltaX, deltaY);
+    
+    // Update attacker sprite direction
+    attacker.setTexture(`player_sprite_${direction}`);
+    
+    // Enhanced lunge with trail effect
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const moveX = originalX + (deltaX / distance) * 30; // Bigger lunge
+    const moveY = originalY + (deltaY / distance) * 30;
+    
+    // Add attack flash effect
+    const flash = this.add.rectangle(attacker.x, attacker.y, 50, 50, 0xffff00, 0.6);
+    flash.setDepth(200);
+    
+    this.tweens.add({
+      targets: flash,
+      scaleX: 2,
+      scaleY: 2,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => flash.destroy()
+    });
+    
+    // Lunge animation
+    this.tweens.add({
+      targets: attacker,
+      x: moveX,
+      y: moveY,
+      duration: 200,
+      ease: 'Power2',
+      yoyo: true,
+      onComplete: () => {
+        attacker.x = originalX;
+        attacker.y = originalY;
+        attacker.setTexture('player_sprite_down');
+      }
+    });
+    
+    // Delayed damage indicator
+    this.time.delayedCall(200, () => {
+      this.showDamageIndicator(target, damage, '#ff4444');
+    });
+  }
+
+  private showRangedAttack(attacker: Phaser.Physics.Arcade.Sprite, target: Phaser.Physics.Arcade.Sprite, damage: number) {
+    // Enhanced ranged attack
+    const deltaX = target.x - attacker.x;
+    const deltaY = target.y - attacker.y;
+    const direction = this.calculateDirection(deltaX, deltaY);
+    
+    // Update attacker direction
+    attacker.setTexture(`player_sprite_${direction}`);
+    
+    // Bow draw effect
+    const bowFlash = this.add.rectangle(attacker.x, attacker.y, 40, 40, 0x00ff00, 0.5);
+    bowFlash.setDepth(150);
+    
+    this.tweens.add({
+      targets: bowFlash,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => bowFlash.destroy()
+    });
+
+    // Create enhanced arrow projectile
+    const arrow = this.add.graphics();
+    arrow.fillStyle(0x654321, 1);
+    arrow.fillTriangle(0, 0, 20, -2, 20, 2); // Arrow shape
+    arrow.fillStyle(0x8B4513, 1);
+    arrow.fillRect(20, -1, 8, 2); // Shaft
+    arrow.setPosition(attacker.x, attacker.y);
+    arrow.setRotation(Math.atan2(deltaY, deltaX));
+    arrow.setDepth(150);
+
+    // Arrow trail effect
+    const trail = this.add.graphics();
+    trail.lineStyle(2, 0xffff00, 0.5);
+    trail.lineBetween(attacker.x, attacker.y, attacker.x, attacker.y);
+    trail.setDepth(149);
+
+    // Animate arrow with trail
+    this.tweens.add({
+      targets: arrow,
+      x: target.x,
+      y: target.y,
+      duration: 350,
+      ease: 'Linear',
+      onUpdate: () => {
+        // Update trail
+        trail.clear();
+        trail.lineStyle(2, 0xffff00, 0.5);
+        trail.lineBetween(attacker.x, attacker.y, arrow.x, arrow.y);
+      },
+      onComplete: () => {
+        arrow.destroy();
+        trail.destroy();
+        this.showDamageIndicator(target, damage, '#ff4444');
+        
+        // Impact effect
+        const impact = this.add.rectangle(target.x, target.y, 30, 30, 0xff6600, 0.8);
+        impact.setDepth(200);
+        this.tweens.add({
+          targets: impact,
+          scaleX: 2,
+          scaleY: 2,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => impact.destroy()
+        });
+      }
+    });
+
+    // Reset attacker direction
+    this.time.delayedCall(500, () => {
+      attacker.setTexture('player_sprite_down');
+    });
+  }
+
+  private endPvPCombat(winnerName: string) {
+    console.log('⚔️ Ending PvP combat, winner:', winnerName);
+    
+    this.isInPvPCombat = false;
+    this.pvpOpponent = null;
+    
+    // Hide PvP HP bars
+    this.hidePvPHPBars();
+    
+    // Properly destroy PvP HP bars to prevent memory leaks
+    if (this.pvpPlayerHPBar && this.pvpPlayerHPBar.active) {
+      this.pvpPlayerHPBar.destroy();
+    }
+    if (this.pvpOpponentHPBar && this.pvpOpponentHPBar.active) {
+      this.pvpOpponentHPBar.destroy();
+    }
+    
+    // Reset player health after combat (both players should be healed)
+    this.playerStats.health = this.playerStats.maxHealth;
+    console.log('⚔️ Player health reset to full after PvP combat');
+    
+    // Show victory/defeat message
+    if (this.statusText && this.statusText.active) {
+      this.statusText.setText(`⚔️ Combat Ended! ${winnerName} wins! Both players healed.`);
+      
+      // Clear status after delay
+      this.time.delayedCall(4000, () => {
+        if (this.statusText && this.statusText.active) {
+          this.statusText.setText('');
+        }
+      });
+    }
+    
+    console.log('⚔️ PvP combat visual system ended');
+  }
+
+  private createPvPHPBars(yourStats: { health: number; maxHealth: number }, opponentStats: { health: number; maxHealth: number }) {
+    // Clean up any existing PvP HP bars first
+    this.hidePvPHPBars();
+    if (this.pvpPlayerHPBar) {
+      this.pvpPlayerHPBar.destroy();
+    }
+    if (this.pvpOpponentHPBar) {
+      this.pvpOpponentHPBar.destroy();
+    }
+
+    const barWidth = 60;
+    const barHeight = 8;
+
+    // Create player PvP HP bar
+    this.pvpPlayerHPBar = this.add.container(0, 0);
+    this.pvpPlayerHPBarBackground = this.add.rectangle(0, 0, barWidth, barHeight, 0x000000, 0.8);
+    this.pvpPlayerHPBarForeground = this.add.rectangle(0, 0, barWidth, barHeight, 0x00ff00);
+    this.pvpPlayerHPBar.add([this.pvpPlayerHPBarBackground, this.pvpPlayerHPBarForeground]);
+    this.pvpPlayerHPBar.setDepth(200); // Above other objects
+
+    // Create opponent PvP HP bar
+    this.pvpOpponentHPBar = this.add.container(0, 0);
+    this.pvpOpponentHPBarBackground = this.add.rectangle(0, 0, barWidth, barHeight, 0x000000, 0.8);
+    this.pvpOpponentHPBarForeground = this.add.rectangle(0, 0, barWidth, barHeight, 0xff0000);
+    this.pvpOpponentHPBar.add([this.pvpOpponentHPBarBackground, this.pvpOpponentHPBarForeground]);
+    this.pvpOpponentHPBar.setDepth(200); // Above other objects
+
+    // Initial positioning and values
+    this.updatePvPHPBars(yourStats, opponentStats);
+    
+    // Show HP bars
+    this.pvpPlayerHPBar.setVisible(true);
+    this.pvpOpponentHPBar.setVisible(true);
+  }
+
+  private updatePvPHPBars(yourStats: { health: number; maxHealth: number }, opponentStats: { health: number; maxHealth: number }) {
+    if (!this.pvpPlayerHPBar || !this.pvpOpponentHPBar || !this.pvpOpponent) return;
+    
+    // Add null checks for stats
+    if (!yourStats || !opponentStats || typeof yourStats.health !== 'number' || typeof opponentStats.health !== 'number') {
+      console.warn('⚔️ Invalid stats data in updatePvPHPBars:', { yourStats, opponentStats });
+      return;
+    }
+    
+    // Update player HP bar
+    const playerHPPercent = yourStats.health / yourStats.maxHealth;
+    this.pvpPlayerHPBarForeground.scaleX = playerHPPercent;
+    this.pvpPlayerHPBarForeground.x = (playerHPPercent - 1) * 30; // Left alignment
+    
+    // Update opponent HP bar
+    const opponentHPPercent = opponentStats.health / opponentStats.maxHealth;
+    this.pvpOpponentHPBarForeground.scaleX = opponentHPPercent;
+    this.pvpOpponentHPBarForeground.x = (opponentHPPercent - 1) * 30; // Left alignment
+    
+    // Update positions above characters
+    this.pvpPlayerHPBar.x = this.player.x;
+    this.pvpPlayerHPBar.y = this.player.y - 50;
+    
+    this.pvpOpponentHPBar.x = this.pvpOpponent.x;
+    this.pvpOpponentHPBar.y = this.pvpOpponent.y - 50;
+  }
+
+  private hidePvPHPBars() {
+    if (this.pvpPlayerHPBar && this.pvpPlayerHPBar.active) {
+      this.pvpPlayerHPBar.setVisible(false);
+    }
+    if (this.pvpOpponentHPBar && this.pvpOpponentHPBar.active) {
+      this.pvpOpponentHPBar.setVisible(false);
+    }
+  }
+
+  // Player loot drop system
+  private createPlayerLootDrops(x: number, y: number, loot: Array<{ id: number; name: string; rarity: string; value: number; quantity: number }>, deadPlayerName: string) {
+    console.log(`💰 Creating loot drops from ${deadPlayerName} at (${x}, ${y})`);
+    
+    // Create loot drops spread around the death position
+    loot.forEach((item, index) => {
+      // Spread loot items in a circle around the death position
+      const angle = (index / loot.length) * 2 * Math.PI;
+      const radius = 30 + (index * 15); // Gradually increase radius
+      const lootX = x + Math.cos(angle) * radius;
+      const lootY = y + Math.sin(angle) * radius;
+      
+      // Create visual loot drop
+      const lootSprite = this.add.image(lootX, lootY, 'loot_drop');
+      lootSprite.setScale(1.2); // Make it bigger and more visible
+      lootSprite.setTint(this.getRarityColor(item.rarity));
+      lootSprite.setInteractive();
+      lootSprite.setData('loot', item);
+      lootSprite.setData('lootId', `${deadPlayerName}_${item.id}_${Date.now()}_${index}`);
+      lootSprite.setDepth(150); // Higher depth to ensure visibility above other objects
+      
+      // Add pulsing glow effect
+      this.tweens.add({
+        targets: lootSprite,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        alpha: 0.8,
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      
+      // Add sparkle effect
+      const sparkles = this.add.particles(lootX, lootY, 'loot_drop', {
+        scale: { start: 0.2, end: 0 },
+        alpha: { start: 1, end: 0 },
+        speed: { min: 10, max: 30 },
+        lifespan: 1000,
+        frequency: 300,
+        quantity: 3
+      });
+      sparkles.setDepth(151); // Higher depth to ensure visibility
+      
+      // Store sparkles reference for cleanup
+      lootSprite.setData('sparkles', sparkles);
+      
+      // Add loot pickup interaction
+      lootSprite.on('pointerdown', () => {
+        this.pickupPlayerLoot(lootSprite, item);
+      });
+      
+      // Auto-cleanup after 60 seconds if not picked up
+      this.time.delayedCall(60000, () => {
+        if (lootSprite.active) {
+          const sparkles = lootSprite.getData('sparkles');
+          if (sparkles) sparkles.destroy();
+          lootSprite.destroy();
+        }
+      });
+    });
+    
+    // Show death message
+    this.statusText.setText(`💀 ${deadPlayerName} was defeated! Loot dropped!`);
+    
+    // Clear status after delay
+    this.time.delayedCall(4000, () => {
+      this.statusText.setText('');
+    });
+  }
+
+  private pickupPlayerLoot(lootSprite: Phaser.GameObjects.Image, loot: { id: number; name: string; rarity: string; value: number; quantity: number }) {
+    // Check if close enough to pick up
+    const distance = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y,
+      lootSprite.x, lootSprite.y
+    );
+    
+    if (distance <= 50) {
+      // Send pickup request to server
+      if (this.multiplayerManager && this.multiplayerManager.isConnected()) {
+        this.multiplayerManager.pickupLoot(
+          lootSprite.getData('lootId'),
+          { x: lootSprite.x, y: lootSprite.y }
+        );
+      }
+      
+      // Destroy loot visually (server will confirm)
+      const sparkles = lootSprite.getData('sparkles');
+      if (sparkles) sparkles.destroy();
+      lootSprite.destroy();
+      
+      // Add to player inventory via Smart Wallet system
+      EventBus.emit('nft-loot-obtained', {
+        itemId: loot.id,
+        itemName: loot.name,
+        rarity: loot.rarity,
+        value: loot.value,
+        quantity: loot.quantity
+      });
+      
+      // Show pickup notification
+      this.statusText.setText(`📦 Picked up ${loot.name} (${loot.rarity})!`);
+      
+      // Clear status after delay
+      this.time.delayedCall(3000, () => {
+        this.statusText.setText('');
+      });
+    } else {
+      // Too far away
+      this.statusText.setText(`📦 Too far away! Get within 50px to pick up loot. (Distance: ${Math.floor(distance)}px)`);
+      
+      // Clear status after delay
+      this.time.delayedCall(2000, () => {
+        this.statusText.setText('');
+      });
+    }
+  }
+
   update() {
+    // Weapon switching
+    if (this.input.keyboard) {
+      const keyOne = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+      const keyTwo = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+      
+      if (Phaser.Input.Keyboard.JustDown(keyOne)) {
+        this.switchWeapon('bronze_sword');
+      }
+      if (Phaser.Input.Keyboard.JustDown(keyTwo)) {
+        this.switchWeapon('bow');
+      }
+    }
+
     // Clear interaction flags and text when not near objects
-    if (!this.activityInProgress && !this.isInCombat) {
+    if (!this.activityInProgress && !this.isInCombat && !this.isInPvPCombat) {
       let nearInteractable = false;
       this.interactiveObjects.children.entries.forEach(obj => {
         const sprite = obj as Phaser.Physics.Arcade.Sprite;
@@ -2301,6 +3682,45 @@ export class LumbridgeScene extends Phaser.Scene {
       if (!nearInteractable) {
         this.statusText.setText('');
       }
+    }
+    
+    // Update PvP HP bar positions during combat
+    if (this.isInPvPCombat && this.pvpOpponent) {
+      this.updatePvPHPBarPositions();
+    }
+    
+    // Update minimap
+    this.updateMinimapPlayerPosition();
+    
+    // Update debug info every second
+    if (this.minimap && this.time.now % 1000 < 50) {
+      this.updateDebugInfo();
+    }
+  }
+
+  private updatePvPHPBarPositions() {
+    if (!this.pvpPlayerHPBar || !this.pvpOpponentHPBar || !this.pvpOpponent) return;
+    
+    // Additional null checks for game objects
+    if (!this.pvpPlayerHPBar.active || !this.pvpOpponentHPBar.active || !this.pvpOpponent.active) return;
+    if (!this.player || !this.player.active) return;
+    
+    // Update HP bar positions to follow characters
+    this.pvpPlayerHPBar.x = this.player.x;
+    this.pvpPlayerHPBar.y = this.player.y - 50;
+    
+    this.pvpOpponentHPBar.x = this.pvpOpponent.x;
+    this.pvpOpponentHPBar.y = this.pvpOpponent.y - 50;
+  }
+  
+  private updateDebugInfo() {
+    const debugText = this.minimap.getData('debugText') as Phaser.GameObjects.Text;
+    if (debugText) {
+      const otherPlayersCount = this.otherPlayers.size;
+      const connectedCount = this.multiplayerManager?.isConnected() ? this.multiplayerManager.getOtherPlayers().length : 0;
+      const connected = this.multiplayerManager?.isConnected() ? 'Yes' : 'No';
+      
+      debugText.setText(`Connected: ${connected}\nOther Players: ${otherPlayersCount}\nFrom Server: ${connectedCount}`);
     }
   }
 } 
