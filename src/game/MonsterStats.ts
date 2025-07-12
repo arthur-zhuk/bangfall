@@ -56,13 +56,7 @@ export interface AbilityEffect {
   value: number
 }
 
-interface BaseMonsterAbility {
-  name: string
-  description: string
-  damage: number
-  cooldown: number
-  effect?: AbilityEffect
-}
+
 
 export interface ItemDrop {
   itemId: number

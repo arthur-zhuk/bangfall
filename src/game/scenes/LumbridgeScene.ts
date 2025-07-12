@@ -69,7 +69,7 @@ export class LumbridgeScene extends Phaser.Scene {
   private equippedWeaponText!: Phaser.GameObjects.Text;
   
   // Click-to-move system
-  private targetPosition: { x: number; y: number } | null = null;
+
   private moveSpeed = 160;
   private moveTween: Phaser.Tweens.Tween | null = null;
   private moveTargetIndicator: Phaser.GameObjects.Image | null = null;
@@ -1716,13 +1716,7 @@ export class LumbridgeScene extends Phaser.Scene {
     this.textures.addCanvas('loot_drop', lootCanvas);
   }
 
-  private hexToRgb(hex: number): { r: number; g: number; b: number } {
-    return {
-      r: (hex >> 16) & 255,
-      g: (hex >> 8) & 255,
-      b: hex & 255
-    };
-  }
+
 
   create() {
     // Create world bounds for top-down view
@@ -2244,8 +2238,8 @@ export class LumbridgeScene extends Phaser.Scene {
     }
   }
 
-  private handleInteraction(player: unknown, interactiveObject: unknown) {
-    const sprite = interactiveObject as Phaser.Physics.Arcade.Sprite;
+  private handleInteraction(_player: unknown, _interactiveObject: unknown) {
+    const sprite = _interactiveObject as Phaser.Physics.Arcade.Sprite;
     const name = sprite.getData('name');
     
     if (!this.activityInProgress && !this.isInCombat) {
@@ -2361,7 +2355,7 @@ export class LumbridgeScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    this.targetPosition = { x: targetX, y: targetY };
+
     
     // Calculate direction for sprite orientation
     const deltaX = targetX - this.player.x;
@@ -2393,7 +2387,7 @@ export class LumbridgeScene extends Phaser.Scene {
         this.playerDirection = 'down';
         this.updatePlayerSprite();
         
-        this.targetPosition = null;
+
         this.moveTween = null;
         
         // Final position update for multiplayer
@@ -2884,28 +2878,7 @@ export class LumbridgeScene extends Phaser.Scene {
     });
   }
   
-  private showDamageEffect(target: Phaser.Physics.Arcade.Sprite, damage: number) {
-    // Flash effect
-    target.setTint(0xff0000);
-    this.time.delayedCall(200, () => {
-      target.clearTint();
-    });
-    
-    // Floating damage text
-    const damageText = this.add.text(target.x, target.y - 20, `-${damage}`, {
-      fontSize: '16px',
-      color: '#ff0000',
-      fontStyle: 'bold'
-    });
-    
-    this.tweens.add({
-      targets: damageText,
-      y: target.y - 50,
-      alpha: 0,
-      duration: 1000,
-      onComplete: () => damageText.destroy()
-    });
-  }
+
 
   private endCombat(victory: boolean, goblin: Phaser.Physics.Arcade.Sprite) {
     this.isInCombat = false;
@@ -3095,10 +3068,7 @@ export class LumbridgeScene extends Phaser.Scene {
     });
   }
   
-  private checkActivityOverlap() {
-    // This method is now handled by the handleInteraction method
-    // Left for compatibility but functionality moved to handleInteraction
-  }
+
 
   private performActivity(activity: string) {
     if (this.activityInProgress) return;

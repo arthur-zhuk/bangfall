@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useSmartWallet } from './SmartWalletProvider'
 import { ethers } from 'ethers'
 import { GameItemsABI, CONTRACT_ADDRESS } from '../contracts/GameItems'
@@ -41,21 +41,13 @@ const getRarityColor = (rarity: string, opacity: number = 1) => {
   }
 }
 
-const getCategoryColor = (category: string) => {
-  switch (category) {
-    case 'resource': return '#8e44ad'
-    case 'food': return '#27ae60'
-    case 'equipment': return '#e74c3c'
-    case 'potion': return '#3498db'
-    default: return '#95a5a6'
-  }
-}
+
 
 export const NFTInventory = () => {
   const { isConnected, address } = useSmartWallet()
   const [inventory, setInventory] = useState<NFTItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [isVisible, setIsVisible] = useState(true) // Always visible in sidebar
+
   const [notification, setNotification] = useState<string | null>(null)
   const [selectedItem, setSelectedItem] = useState<NFTItem | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -229,7 +221,7 @@ export const NFTInventory = () => {
   // Listen for Smart Wallet activity updates
   useEffect(() => {
     const handleSmartWalletActivity = (event: CustomEvent) => {
-      const { itemId, quantity, itemName } = event.detail
+      const { itemId, quantity } = event.detail
       
       setInventory(prev => {
         const existingItem = prev.find(item => item.id === itemId)
@@ -380,7 +372,7 @@ export const NFTInventory = () => {
     selectedCategory === 'all' || item.category === selectedCategory
   )
 
-  const totalItems = inventory.reduce((sum, item) => sum + item.quantity, 0)
+
 
   if (!isConnected) {
     return null

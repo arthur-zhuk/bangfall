@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getAlchemyStatus, ALCHEMY_CONFIG } from '../config/alchemy'
+import { getAlchemyStatus } from '../config/alchemy'
 
 export const SmartWalletSetup = () => {
   const [setupStatus, setSetupStatus] = useState(getAlchemyStatus())

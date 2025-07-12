@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import Phaser from 'phaser';
 import { EventBus } from './EventBus';
 import { LumbridgeScene } from './scenes/LumbridgeScene';

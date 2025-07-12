@@ -1,6 +1,7 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { PhaserGame, type IRefPhaserGame } from '../game/PhaserGame';
 import { EventBus } from '../game/EventBus';
+
 import { NFTInventory } from './NFTInventory';
 import { LevelUpNotification } from './LevelUpNotification';
 import { MultiplayerUI } from './MultiplayerUI';
@@ -10,7 +11,7 @@ import { MultiplayerManager } from '../multiplayer/MultiplayerManager';
 
 export const LumbridgeGame = () => {
   const phaserRef = useRef<IRefPhaserGame>(null);
-  const [currentScene, setCurrentScene] = useState<Phaser.Scene | null>(null);
+
   const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null);
   const [levelUpResult, setLevelUpResult] = useState<LevelUpResult | null>(null);
   const [statsManager] = useState(() => new PlayerStatsManager());
@@ -131,7 +132,6 @@ export const LumbridgeGame = () => {
   }, [statsManager, multiplayerManager]); // Add multiplayerManager to dependencies
 
   const onCurrentActiveScene = (scene: Phaser.Scene) => {
-    setCurrentScene(scene);
     // Pass the stats manager to the scene when it's ready
     if (scene && 'setStatsManager' in scene) {
       (scene as any).setStatsManager(statsManager);

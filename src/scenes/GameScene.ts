@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { CONTRACT_ADDRESS } from '../contracts/GameItems'
+
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
@@ -202,7 +202,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private async refreshBlockchainData(smartWalletContext: any) {
+  private async refreshBlockchainData(_smartWalletContext: any) {
     try {
       // For now, simulate blockchain data since we don't have full smart wallet integration
       // In a real implementation, you would fetch data from the blockchain using the smart wallet

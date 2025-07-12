@@ -1,7 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
-import { ALCHEMY_CONFIG, getNetworkConfig } from '../config/alchemy'
-import { createAlchemySmartAccountClient } from '@alchemy/aa-alchemy'
-import { sepolia } from '@alchemy/aa-core'
+import { getNetworkConfig } from '../config/alchemy'
 // import { MagicSigner } from '@alchemy/aa-signers'
 
 // Define SkillType as array for indexing
@@ -184,10 +182,10 @@ export const SmartWalletProvider = ({ children }: SmartWalletProviderProps) => {
 
   const logout = async () => {
     try {
-      if (alchemySigner) {
-        await alchemySigner.disconnect()
+      if (magicSigner) {
+        await magicSigner.disconnect()
       }
-      setAlchemySigner(null)
+      setMagicSigner(null)
       setSmartAccount(null)
       setAddress(null)
       setIsConnected(false)

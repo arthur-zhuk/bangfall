@@ -226,7 +226,7 @@ export default function CombatArena({ onClose }: CombatArenaProps) {
     }
   };
 
-  const awardCombatXP = async (xp: number) => {
+  const awardCombatXP = async (_xp: number) => {
     if (!isConnected || !address) return
 
     try {
