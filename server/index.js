@@ -9,8 +9,8 @@ const server = createServer(app);
 // Production-ready CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ["https://your-game-domain.com", "https://your-game-domain.netlify.app", "https://your-game-domain.vercel.app"]
-    : ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"],
+    ? ["https://bangfall-ll8napt3q-arthur-zhuks-projects.vercel.app", "https://bangfall.onrender.com"]
+    : ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080", "http://localhost:3001"],
   methods: ["GET", "POST"],
   credentials: true
 };
