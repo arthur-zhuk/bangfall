@@ -6,9 +6,10 @@ WORKDIR /app
 COPY server/package*.json ./
 RUN npm ci --only=production
 
-# Copy server files
-COPY server/index.js ./index.js
+# Create server directory and copy server files
+RUN mkdir -p server
+COPY server/index.js ./server/index.js
 
 EXPOSE 3001
 
-CMD ["node", "index.js"] 
+CMD ["node", "server/index.js"] 
